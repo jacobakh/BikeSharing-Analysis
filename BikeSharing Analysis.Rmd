@@ -1,0 +1,170 @@
+---
+title: "Code"
+author: "Yakub Akhmerov"
+date: "November 17, 2016"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(leaps)
+library(ggplot2)
+library(boot)
+setwd("/Users/yakubakhmerov/Downloads")
+BikeSharing <- read.csv("BikeSharingDataset.csv")
+```
+
+```{r}
+par(mfrow = c(2, 2))
+plot(lm(log(cnt + 4)~ season + yr + mnth + hr + weekday + temp + weathersit + hum + windspeed, data=BikeSharing)) #computing the residual plots to determine which model was best.
+```
+
+```{r}
+env_season_casual.lm = lm(log(casual + 4)~ season + yr + mnth + hr + weekday + temp + weathersit + hum + windspeed, data=BikeSharing) #fitted a linear model for the variables dicussed in the report
+
+env_season_casual = regsubsets(log(casual + 4)~ season + yr + mnth + hr + weekday + temp + weathersit + hum + windspeed, data=BikeSharing) #fitted a model to evaluate critera values.
+
+n = nrow(BikeSharing)
+```
+
+
+
+
+#Computing Adjusted R squared
+```{r}
+summary(env_season_casual)$adjr2
+which.max(summary(env_season_casual)$adjr2)
+summary(env_season_casual)$which #throwout windspeed
+```
+
+Per the analysis, it showed that it was appropriate to throw out the variable "windspeed".
+
+
+#Computing AIC
+```{r, results ="hide"}
+step(env_season_casual.lm) #throw out windspeed and weathersit  
+#hid results because it makes appendix difficult to read
+```
+
+Per the analysis of AIC, it seemed best to throwout the "windspeed" and "weathersit" variable.
+
+
+#Computing BIC
+```{r, results = "hide"}
+step(env_season_casual.lm, direction="both", k = log(n)) #windspeed, weathersit, weekday, mnth out
+#hid results because it makes appendix difficult to read
+
+```
+
+BIC showed that it'd be best to throw out "windspeed", weathersit, "weekday" and "mnth".
+
+
+#Computing Mallow's CP
+```{r}
+summary(env_season_casual)$cp
+which.min(summary(env_season_casual)$cp) #throw out weathersit and windspeed
+```
+
+Per the analysis of Mallow's CP, it seemed best to throwout the "windspeed" and "weathersit" variable.
+
+
+
+#Leave One Out Cross-Validation
+```{r}
+m1 = lm(log(casual + 4)~ season + yr + mnth + hr + weekday + temp + weathersit + hum, data=BikeSharing)
+m2 = lm(log(casual + 4)~ season + yr + mnth + hr + weekday + temp + hum, data=BikeSharing)
+m3 = lm(log(casual + 4)~ season + yr + hr + temp + hum, data=BikeSharing)
+#m4 = lm(log(cnt + 4)~ season + yr + mnth + hr + weekday + temp + weathersit + hum + windspeed, data=BikeSharing)
+
+cv.scores = rep(-999, 3)
+cv.scores[1] = sum((m1$residuals^2)/((1 - influence(m1)$hat)^2))
+cv.scores[2] = sum((m2$residuals^2)/((1 - influence(m2)$hat)^2))
+cv.scores[3] = sum((m3$residuals^2)/((1 - influence(m3)$hat)^2))
+#cv.scores[4] = sum((m4$residuals^2)/((1 - influence(m4)$hat)^2))
+cv.scores
+```
+
+The lowest CV svore is 9947.836, which is the AIC and Mallow's CP models.
+
+#what is the effect of temperature on the number of bike rentals
+
+
+```{r}
+#Hypothesis test: Testing the null hypothesis that the working day variable has no impact on the number of bikes rented for casual bikes. 
+M = lm(log(casual + 4) ~ workingday + weathersit + temp + atemp + hum + windspeed, data = BikeSharing) #let the model 
+
+par(mfrow = c(2, 2))
+
+plot(M) #Testing Normality
+
+
+m = lm(log(casual + 4) ~ weathersit + temp + atemp + hum + windspeed, data = BikeSharing)
+
+fst = (deviance(m) - deviance(M))/(deviance(M)/M$df.residual)
+sqrt(fst)
+1 - pf(fst, 1, M$df.residual)
+
+
+summary(M)
+#The p-value is simply the probability that a t-variable with 17379 degrees of freedom exceeds the t-value which is 2.326:
+1-pt(1.96, n)
+
+anova(M, m)
+```
+
+The p-value computed is 2.2e-16, which is smaller than our critical value of 0.025. Thus, we reject the null.
+
+
+#Does the effect of temperature on the number of bike rentals effect vary from weekday to weekend?
+```{r}
+#Hypothesis Test
+M = lm(log(registered + 4) ~ workingday + weathersit + temp + atemp + hum + windspeed, data = BikeSharing)
+m = lm(log(registered + 4) ~ weathersit + temp + atemp + hum + windspeed, data = BikeSharing)
+
+par(mfrow = c(2, 2))
+
+plot(M) #Testing Normality
+
+fst = (deviance(m) - deviance(M))/(deviance(M)/M$df.residual)
+sqrt(fst)
+1 - pf(fst, 1, M$df.residual)
+
+
+#The p-value is simply the probability that a t-variable with 17379 degrees of freedom exceeds the t-value which is 2.326:
+1-pt(1.96, n)
+
+anova(M, m)
+```
+
+The p-value computed is 1.245559e-11, which is smaller than our critical value of 0.025. Thus, we reject the null.
+
+
+#Between 2011 and 2012, was there a significant difference in the seasonal conditions for these years or is the only difference between these years is the number of bikes rented?
+```{r}
+#Hypothesis test: 
+M = lm( yr ~ mnth + hr + workingday + weathersit + atemp + hum + windspeed + cnt, data = BikeSharing)
+m = lm( yr ~ cnt, data = BikeSharing)
+
+par(mfrow = c(2, 2))
+
+plot(M) #testing normality
+
+#nonparametric bootstrap
+rsq <- function(formula, data, indices) {
+  d <- BikeSharing[indices,] # allows boot to select sample 
+  fit <- lm(formula, data=d)
+  return(summary(M)$coef[6,4])
+} 
+
+result <- boot(data=BikeSharing, statistic=rsq, 
+  	R=100, formula=yr ~ mnth + hr + workingday + weathersit + atemp + hum + windspeed + cnt)
+result
+
+```
+
+The test statistic is computed to 2.57230562912941e-17. Which is very small and can be safely assumed that it is in the rejection region.
+
+
